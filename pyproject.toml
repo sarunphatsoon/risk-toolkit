@@ -1,0 +1,16 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "risk-toolkit"
+version = "0.1.0"
+description = "C++ credit-loss Monte Carlo and VaR/ES backtesting toolkit with Python bindings"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy", "scipy", "pandas"]
+
+[tool.scikit-build]
+minimum-version = "0.10"
+wheel.packages = []                      # the C++ build installs everything (see CMakeLists.txt)
+cmake.define = { BUILD_TESTS = "OFF" }   # no need to download Catch2 for a user install

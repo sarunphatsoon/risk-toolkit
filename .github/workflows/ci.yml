@@ -59,3 +59,32 @@ jobs:
       - name: Check the pandas wrapper against the original pandas code
         working-directory: python
         run: python check_wrapper.py
+
+
+  pip-install:
+    name: pip install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package
+        run: pip install .
+
+      - name: Import check
+        working-directory: python
+        run: python -c "import creditmc_core, fast_risk; print(creditmc_core.irb_asymptotic_loss(0.02, 0.45, 0.15, 0.999))"
+
+      - name: Equivalence checks against the installed package
+        working-directory: python
+        run: |
+          python check_var_models.py
+          python check_backtests.py
+          python check_wrapper.py

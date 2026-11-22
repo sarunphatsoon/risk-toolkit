@@ -18,12 +18,24 @@ set_target_properties(creditmc PROPERTIES POSITION_INDEPENDENT_CODE ON)
 option(BUILD_PYTHON "Build the Python extension module" ON)
 option(BUILD_TESTS "Build the unit tests" ON)
 
+# Python extension module: `import creditmc_core`.
 if(BUILD_PYTHON)
+  if(SKBUILD)
+    set(PYBIND11_FINDPYTHON ON)  # use the Python that is building the wheel
+  endif()
   find_package(pybind11 CONFIG REQUIRED)
   pybind11_add_module(creditmc_core src/bindings.cpp)
   target_link_libraries(creditmc_core PRIVATE creditmc)
-  set_target_properties(creditmc_core PROPERTIES
-   LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+
+  if(NOT SKBUILD)
+    # Development build: drop the module next to the Python scripts.
+    set_target_properties(creditmc_core PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  endif()
+
+  # Used by `pip install .`: put the module and the pandas wrapper into site-packages.
+  install(TARGETS creditmc_core LIBRARY DESTINATION .)
+  install(FILES python/fast_risk.py DESTINATION .)
 endif()
 
 if(BUILD_TESTS)
