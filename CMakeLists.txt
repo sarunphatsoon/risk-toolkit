@@ -10,7 +10,7 @@ endif()
 
 find_package(Threads REQUIRED)
 
-add_library(creditmc STATIC src/engine.cpp)
+add_library(creditmc STATIC src/engine.cpp src/market_risk.cpp src/backtest.cpp)
 target_include_directories(creditmc PUBLIC include)
 target_link_libraries(creditmc PUBLIC Threads::Threads)
 set_target_properties(creditmc PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -35,7 +35,7 @@ if(BUILD_TESTS)
   FetchContent_MakeAvailable(Catch2)
 
   enable_testing()
-  add_executable(tests tests/test_engine.cpp)
+  add_executable(tests tests/test_engine.cpp tests/test_market_risk.cpp tests/test_backtest.cpp tests/test_batch.cpp tests/test_sliding_window.cpp)
   target_link_libraries(tests PRIVATE creditmc Catch2::Catch2WithMain)
 
   list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)

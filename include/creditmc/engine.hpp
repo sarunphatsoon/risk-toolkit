@@ -13,7 +13,14 @@ struct Portfolio {
     double rho;               // asset correlation
 };
 
+// Standard normal CDF: P(Z <= x).
 double norm_cdf(double x);
+
+// Standard normal density.
+double norm_pdf(double x);
+
+// Inverse standard normal CDF: Acklam's approximation followed by one Halley
+// refinement step, accurate to close to machine precision.
 double norm_inv_cdf(double p);
 
 std::vector<double> simulate_losses(const Portfolio& portfolio,

@@ -171,3 +171,20 @@ TEST_CASE("99% VaR of a large granular portfolio is close to the IRB value",
 
     CHECK_THAT(var, WithinRel(irb, 0.04));
 }
+
+TEST_CASE("norm_inv_cdf agrees with SciPy to near machine precision", "[normal]") {
+    // Reference values from scipy.stats.norm.ppf.
+    CHECK_THAT(norm_inv_cdf(1e-9), WithinAbs(-5.9978070150076865, 1e-13));
+    CHECK_THAT(norm_inv_cdf(1e-6), WithinAbs(-4.753424308822899, 1e-13));
+    CHECK_THAT(norm_inv_cdf(0.001), WithinAbs(-3.090232306167813, 1e-13));
+    CHECK_THAT(norm_inv_cdf(0.05), WithinAbs(-1.6448536269514729, 1e-13));
+    CHECK_THAT(norm_inv_cdf(0.3), WithinAbs(-0.5244005127080409, 1e-13));
+    CHECK_THAT(norm_inv_cdf(0.975), WithinAbs(1.959963984540054, 1e-13));
+    CHECK_THAT(norm_inv_cdf(0.999999), WithinAbs(4.753424308817087, 1e-12));
+}
+
+TEST_CASE("norm_pdf matches known values", "[normal]") {
+    CHECK_THAT(norm_pdf(0.0), WithinAbs(0.3989422804014327, 1e-15));
+    CHECK_THAT(norm_pdf(1.0), WithinAbs(0.24197072451914337, 1e-15));
+    CHECK_THAT(norm_pdf(-2.5), WithinAbs(0.017528300493568537, 1e-15));
+}

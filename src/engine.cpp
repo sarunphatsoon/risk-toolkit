@@ -12,7 +12,13 @@ double norm_cdf(double x) {
     return 0.5 * std::erfc(-x / std::sqrt(2.0)); 
 }
 
-double norm_inv_cdf(double p) {
+double norm_pdf(double x) {
+    static constexpr double inv_sqrt_2pi = 0.39894228040143267794;
+    return inv_sqrt_2pi * std::exp(-0.5 * x * x);
+}
+
+namespace {
+double norm_inv_cdf_approx(double p){
     if (!(p > 0.0 && p < 1.0)) {
         throw std::invalid_argument("norm_inv_cdf: p must be in (0, 1)");
     }
@@ -51,7 +57,21 @@ double norm_inv_cdf(double p) {
     return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / 
            (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0);
 }
-
+    
+}
+double norm_inv_cdf(double p) {
+    if (!(p > 0.0 && p < 1.0)) {
+        throw std::invalid_argument("norm_inv_cdf: p must be in (0, 1)");
+    }
+    if (p > 0.5) {
+        return -norm_inv_cdf(1.0 - p);
+    }
+    double x = norm_inv_cdf_approx(p);
+    const double e = norm_cdf(x) - p;
+    const double u = e * 2.50662827463100050242 * std::exp(0.5 * x * x);
+    x -= u / (1.0 + 0.5 * x * u);
+    return x;
+}
 
 namespace {
 

@@ -26,7 +26,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   python-module:
-    name: Python module builds and imports
+    name: Python module and equivalence checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,3 +47,15 @@ jobs:
       - name: Smoke test
         working-directory: python
         run: python -c "import creditmc_core as c; print(c.irb_asymptotic_loss(0.02, 0.45, 0.15, 0.999))"
+
+      - name: Check VaR/ES models against the Python reference
+        working-directory: python
+        run: python check_var_models.py
+
+      - name: Check backtests against the Python reference
+        working-directory: python
+        run: python check_backtests.py
+
+      - name: Check the pandas wrapper against the original pandas code
+        working-directory: python
+        run: python check_wrapper.py
