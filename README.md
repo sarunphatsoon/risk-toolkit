@@ -1,4 +1,4 @@
-![CI](https://github.com/sarunphatsoon/credit-mc-engine/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/YOUR_USERNAME/risk-toolkit/actions/workflows/ci.yml/badge.svg)
 # Credit and Market Risk Toolkit (C++ / Python)
 
 A tested C++20 library with Python bindings for two jobs in risk management: a multithreaded
