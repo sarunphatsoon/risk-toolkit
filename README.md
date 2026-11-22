@@ -1,42 +1,37 @@
 ![CI](https://github.com/sarunphatsoon/credit-mc-engine/actions/workflows/ci.yml/badge.svg)
+# Credit and Market Risk Toolkit (C++ / Python)
 
-# Credit Loss Monte Carlo Engine (C++ / Python)
-
-A multithreaded C++20 Monte Carlo engine for portfolio credit losses under the
-Vasicek one-factor model (the model behind the Basel IRB capital formula),
-exposed to Python via pybind11.
+A tested C++20 library with Python bindings for two jobs in risk management: a multithreaded
+Monte Carlo engine for portfolio credit losses (the Vasicek one-factor model behind the Basel
+IRB capital formula), and rolling VaR / Expected Shortfall forecasts with the standard
+backtests. A pandas wrapper lets existing Python code switch to the C++ with a one-line import.
 
 **Highlights**
 
-- About 9x faster than a vectorised NumPy implementation on a multi-core Mac, with
-  identical results for any thread count
-- Converges to the closed-form Basel IRB value as portfolios become granular
-- Quantifies what the IRB formula ignores: with 40% of exposure in 10 loans, the
-  99.9% VaR is about 20% above the IRB figure
-- 14 unit tests (Catch2), built and tested on Linux and macOS in CI
+- Credit engine: about 7x faster than a single-core vectorised NumPy simulation on a 10-core
+  Mac, with identical results for any thread count, converging to the closed-form Basel IRB
+  value as portfolios become granular
+- Rolling historical VaR/ES: about 17x faster than vectorised NumPy on one thread and about
+  115x on 10 threads, on a 2,000-asset panel
+- Every C++ function is checked against independent Python implementations (the original
+  pandas code, to about 1e-14), by 42 unit tests and equivalence checks that run in CI
+- Quantifies what the IRB formula ignores: with 40% of exposure in 10 loans, the 99.9% VaR is
+  about 20% above the IRB figure
 
-## Model
+## What is inside
 
-Each obligor `i` defaults if its asset value falls below its default threshold:
+| Component | What it does |
+|---|---|
+| Credit loss engine | Vasicek one-factor Monte Carlo, multithreaded, reproducible; Basel IRB asymptotic formula |
+| VaR / ES models | Rolling historical, normal and EWMA VaR and Expected Shortfall |
+| Batch kernel | The same models over many assets at once, in parallel across assets |
+| Backtests | Kupiec, Christoffersen independence, conditional coverage, Basel traffic light, ES ratio, FZ0 score |
+| `fast_risk` | pandas wrapper with the same function names and return types as the original pandas code |
 
-```
-sqrt(rho) * Z + sqrt(1 - rho) * eps_i  <  Phi^-1(PD_i)
-```
+Not included: GARCH and Student-t models (they need Python's `arch` package for fitting),
+portfolio-level VaR, pricing and stress testing.
 
-`Z` is a common (systematic) factor shared by all obligors, `eps_i` is the obligor's own
-shock, and `rho` is the asset correlation. The portfolio loss in a scenario is the sum of
-`EAD_i * LGD_i` over the obligors that default. The Basel IRB formula is the limit of this
-model for infinitely many small obligors, which gives a closed form to validate against.
-
-## Features
-
-- Heterogeneous portfolios: different PD, EAD and LGD per obligor
-- Reproducible: results depend only on the seed, not on the number of threads
-  (each block of 1,024 scenarios has its own independently seeded generator)
-- Fast random numbers: xoshiro256++ with a hand-written normal sampler
-- Validated against a pure NumPy reference and the closed-form IRB formula
-
-## Build
+## Install
 
 Requires a C++20 compiler, CMake 3.18+ and Python 3.9+.
 
@@ -46,36 +41,61 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cmake -S . -B build -Dpybind11_DIR=$(python -m pybind11 --cmakedir)
 cmake --build build -j
-```
-
-Run the unit tests:
-
-```bash
 ctest --test-dir build --output-on-failure
 ```
 
-Run the experiments (each script prints results and the plots are saved to `docs/`):
+The build puts the Python module `creditmc_core` into `python/`. Run the examples below from
+that folder, or add it to `PYTHONPATH`.
 
-```bash
-cd python
-python compare.py
-python concentration.py
-python plot_concentration.py
-python plot_correlation.py
-python plot_convergence.py
+## Quick start
+
+Credit losses:
+
+```python
+import numpy as np
+import creditmc_core as cc
+
+n = 1000                                   # equal obligors: PD 2%, exposure 1, LGD 45%
+losses = cc.simulate(np.full(n, 0.02), np.ones(n), np.full(n, 0.45),
+                     0.15, 1_000_000, seed=1)          # asset correlation 0.15
+print(np.quantile(losses, 0.999))          # 99.9% VaR of the portfolio loss
+print(n * cc.irb_asymptotic_loss(0.02, 0.45, 0.15, 0.999))   # Basel IRB figure
 ```
+
+Market risk, with pandas:
+
+```python
+import pandas as pd
+import fast_risk
+
+prices = pd.read_csv("prices.csv", index_col="Date", parse_dates=True)
+returns = fast_risk.to_returns(prices["SPY"])
+forecast = fast_risk.historical(returns, window=250, alpha=0.01)   # DataFrame: VaR, ES
+print(fast_risk.summarize(returns, forecast, 0.01))                # hits, Kupiec, ES ratio, FZ0 ...
+
+# Many assets at once, in parallel across assets
+all_returns = pd.DataFrame({c: fast_risk.to_returns(prices[c]) for c in prices.columns})
+forecasts = fast_risk.var_es_panel(all_returns, model="historical", window=250, alpha=0.01)
+```
+
+To switch existing code that uses `historical`, `normal`, `ewma` and the backtests from
+`models.py` and `backtest.py`, change the imports to `from fast_risk import ...`.
 
 ## Results
 
-### Validation and speed
+Timings are medians of repeated runs on a 10-core Apple Silicon laptop.
 
-1,000 obligors, 200,000 scenarios, Apple Silicon Mac: the C++ engine matches the NumPy
-reference and the analytical expected loss, and runs roughly 9-10x faster.
+### Credit engine
 
-### Concentration effect
+**Speed and thread scaling** (1,000 obligors, 200,000 scenarios): 2.0x on 2 threads, 3.8x on 4
+(95% efficiency), 6.3x on 8 and 7.2x on 10, versus 1 thread. Single-thread speed is on par with
+NumPy, so the 7.0x advantage over NumPy at 10 threads comes from parallelism. Results are
+identical at every thread count.
 
-1,000 obligors, 1M scenarios, PD 2%, LGD 45%, rho 0.15, total exposure fixed. The IRB
-formula gives one VaR for every row because it ignores concentration:
+![Thread scaling](docs/threads.png)
+
+**Concentration effect** (1,000 obligors, 1M scenarios, PD 2%, LGD 45%, rho 0.15, total exposure
+fixed). The IRB formula gives one VaR for every row because it ignores concentration:
 
 | Top-10 share of exposure | MC VaR (99.9%) | MC / IRB | ES (99.9%) |
 |---|---|---|---|
@@ -85,54 +105,83 @@ formula gives one VaR for every row because it ignores concentration:
 | 30% | 88.55 | 1.116 | 104.23 |
 | 40% | 95.18 | 1.200 | 112.00 |
 
-IRB VaR is 79.35 in every row. With 40% of exposure in 10 loans, simulated tail risk is
-about 20% above the IRB figure.
+IRB VaR is 79.35 in every row. With 40% of exposure in 10 loans, simulated tail risk is about
+20% above the IRB figure.
 
 ![Concentration effect](docs/concentration.png)
 
-### Correlation sweep
-
-1,000 equal obligors, PD 2%, LGD 45%, 1M scenarios x 5 runs per point. Monte Carlo VaR
-tracks the IRB formula closely; the excess over IRB is about 4% at rho = 0.05 and falls
-to about 1% for rho >= 0.175 (error bars are standard errors over 5 runs).
+**Correlation sweep** (1,000 equal obligors, 1M scenarios x 5 runs per point). Monte Carlo VaR
+tracks the IRB formula closely; the excess over IRB is about 4% at rho = 0.05 and falls to about
+1% for rho >= 0.175 (error bars are standard errors over 5 runs).
 
 ![Correlation sweep](docs/correlation.png)
 
-### Convergence to IRB
-
-Equal obligors, total exposure fixed, rho 0.15, 1M scenarios x 5 runs. As the number of
-obligors grows, Monte Carlo VaR converges to the Basel IRB value, which assumes infinitely
-many obligors: the ratio falls from 1.04 at N = 250 to about 1.00 at N >= 2,000, and the
-excess is consistent with scaling as 1/N. (At small N the loss distribution is discrete, so
-the N = 250 error bar understates the true uncertainty.)
+**Convergence to IRB** (equal obligors, total exposure fixed, rho 0.15). As the number of obligors
+grows, Monte Carlo VaR converges to the Basel value, which assumes infinitely many obligors: the
+ratio falls from 1.04 at N = 250 to about 1.00 at N >= 2,000, and the excess is consistent with
+scaling as 1/N. At small N the loss distribution is discrete, so the N = 250 error bar understates
+the true uncertainty.
 
 ![Convergence](docs/convergence.png)
 
-## Tests
+### Market-risk module
 
-14 unit tests (Catch2) cover the normal distribution functions, the IRB formula against
-independently computed values, input validation, reproducibility across thread counts, and
-statistical checks of the simulation (mean loss against expected loss, and the tail VaR of a
-large portfolio against the IRB value). CI runs them on Linux and macOS for every push, and
-also checks that the Python module builds and imports.
+**Correctness.** On the author's 7-asset daily dataset (SPY, KRE, JPM, AAPL, TSLA, ES3.SI,
+BTC-USD) at 95% and 99%, the C++ VaR and ES forecasts match the original pandas code to about
+1e-17, and every backtest statistic matches. A full ML forecasting pipeline run on the wrapper
+reproduced its results files to about 1e-14, with the same hit counts and the same missing values.
+
+**Speed** (rolling historical VaR/ES, 2,000 assets x 5,000 days, window 250, 99%):
+
+| Method | Time for the panel | vs vectorised NumPy |
+|---|---|---|
+| pandas loop (estimated from 3 assets) | 1,103 s | |
+| vectorised NumPy (estimated from 25 assets) | 16.5 s | 1x |
+| C++ batch, 1 thread | 0.97 s | 17x |
+| C++ batch, 10 threads | 0.14 s | 115x |
+
+The two Python baselines are timed on a sample and extrapolated; the C++ rows process the whole
+panel, including copying data in and out of Python. The NumPy version is a straightforward
+vectorisation (it does not use threads). Across threads the panel scales 1.8x on 2, 3.5x on 4,
+5.2x on 8 and 6.7x on 10, with results identical at every thread count. Each asset is a very short
+task (about 0.5 ms), so scaling is lower than for the credit engine.
+
+![Market-risk benchmark](docs/market_risk_benchmark.png)
+
+The normal and EWMA models are already fast in pandas (milliseconds per asset), so the C++
+versions are about equal there. The speed-up is in the historical model, which uses a sliding
+sorted window instead of re-sorting every window.
+
+## Testing
+
+- **42 unit tests** (Catch2): normal-distribution functions against SciPy, the IRB formula,
+  input validation, thread-count independence, hand-worked VaR/ES examples, statistical checks
+  of the simulation, and a brute-force comparison of the sliding-window kernel on tied data.
+  Reference numbers come from independent Python code, not from the C++.
+- **Equivalence checks** (`python/check_*.py`) compare the C++ with the original pandas code on
+  synthetic data, edge cases and the real dataset. They run in CI.
+- **CI** builds and tests on Linux and macOS for every push and checks that the Python module
+  builds and passes the equivalence checks.
+- Tests were also checked by introducing deliberate bugs and confirming they fail.
 
 ## Limitations
 
-- One systematic factor, a single correlation shared by all obligors, and a one-period horizon
-- Constant LGD per obligor (no stochastic recovery) and no rating migration
-- VaR at the 99.9% level rests on a small number of tail scenarios, so results are noisy
-  unless the scenario count is large; the experiments average several seeds and report
-  standard errors
+- Credit model: one systematic factor, one correlation shared by all obligors, a one-period
+  horizon and constant LGD
+- The 99.9% VaR rests on few tail scenarios, so results are noisy unless the scenario count is
+  large; the experiments average several seeds and report standard errors
+- The Basel traffic light is only meaningful for 99% VaR over 250 days
+- The C++ rejects non-finite returns and invalid arguments with an error, where the original
+  pandas code would quietly produce NaN
+- The compiled module only loads in the Python version it was built with
 
 ## Layout
 
-- `include/creditmc/engine.hpp`, `src/engine.cpp`: simulation engine
-- `src/bindings.cpp`: pybind11 module `creditmc_core`
-- `tests/test_engine.cpp`: Catch2 unit tests
-- `python/reference.py`: NumPy reference implementation
-- `python/compare.py`: validation and benchmark
-- `python/concentration.py`: concentration experiment (table)
-- `python/plot_concentration.py`: concentration plot
-- `python/plot_correlation.py`: correlation sweep plot
-- `python/plot_convergence.py`: convergence plot
+- `include/creditmc/`, `src/`: engine, VaR/ES models, backtests and the pybind11 bindings
+- `tests/`: Catch2 unit tests
+- `python/fast_risk.py`: pandas wrapper
+- `python/reference_*.py`: reference implementations used by the checks
+- `python/check_*.py`: equivalence checks against the reference code
+- `python/compare.py`, `concentration.py`, `plot_*.py`, `benchmark_*.py`: experiments and benchmarks
 - `.github/workflows/ci.yml`: continuous integration
+
